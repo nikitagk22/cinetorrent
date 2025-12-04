@@ -1,0 +1,58 @@
+
+Да, код выглядит отлично! Вы всё сделали правильно:
+Логика шардинга (rowid % ?) в db.js реализована верно. Это гарантирует, что при запуске нескольких копий они не будут пересекаться.
+WAL-режим включен везде, где нужно. Это спасёт от ошибки SQLITE_BUSY при одновременной записи.
+Настройки WebTorrent (maxConns: 300) и таймауты (12000) адаптированы под сервер.
+Однако, есть один критический момент в db.js, который может сильно замедлить работу при записи результатов.
+⚠️ Важное исправление производительности в db.js
+Сейчас функция insertTorrentDetails каждый раз открывает файл базы данных, пишет и закрывает его.
+code
+JavaScript
+// Как сейчас (медленно):
+function insertTorrentDetails(data) {
+  const db = getTorrentDataDb(); // <--- Открывает файл, включает WAL, делает PRAGMA...
+  try {
+    // ... insert ...
+  } finally {
+    db.close(); // <--- Закрывает файл
+  }
+}
+На сервере открытие соединения с БД — дорогая операция. Если у вас 25 потоков пытаются писать данные, скрипт будет тратить кучу времени на открытие/закрытие файла.
+Нужно закешировать подключение к базе для записи.
+Сделайте это изменение в db.js:
+code
+JavaScript
+// --- В НАЧАЛЕ ФАЙЛА db.js добавьте переменную ---
+let dbDataInstance = null; // Кэш для базы с результатами
+
+// --- ИЗМЕНИТЕ ФУНКЦИЮ getTorrentDataDb ---
+function getTorrentDataDb() {
+  // Если база уже открыта — возвращаем готовое подключение
+  if (dbDataInstance) return dbDataInstance;
+
+  const db = new Database(TORRENT_DATA_DB_PATH);
+  configureDb(db, false); 
+  
+  // ... (ваш код создания таблиц и колонок остаётся без изменений) ...
+
+  // Сохраняем подключение в переменную
+  dbDataInstance = db;
+  return db;
+}
+
+// --- ИЗМЕНИТЕ ФУНКЦИЮ insertTorrentDetails ---
+function insertTorrentDetails(data) {
+  const db = getTorrentDataDb();
+  // УБИРАЕМ try/finally и db.close()! 
+  // Мы держим соединение открытым пока работает скрипт.
+  // better-sqlite3 сам закроет его при выходе из процесса.
+  
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO torrent_details 
+    (info_hash, resolution, size, files, hdr_type, file_type, codec, bitrate, audio) 
+    VALUES (@info_hash, @resolution, @size, @files, @hdr_type, @file_type, @codec, @bitrate, @audio)
+  `);
+  stmt.run(data);
+}
+Почему это важно?
+Без этого изменения вы будете открывать файл базы данных тысячи раз в минуту. С этим изменением база открывается 1 раз на запуске скрипта, и запись происходит мгновенно.
