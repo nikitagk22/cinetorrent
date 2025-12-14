@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -12,7 +12,10 @@ import {
   X,
   Sparkles,
   HelpCircle,
-  Youtube
+  Youtube,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { getMovieByIdSlug, getTorrentsByTmdbId, getTorrentDetailsByInfoHash, getRandomMovies } from '../../lib/db';
 import TorrentRow from '../../components/TorrentRow';
@@ -30,9 +33,100 @@ const convertEnglishUnitsToRussian = (sizeString) => {
     .replace(/B/g, 'Б');
 };
 
+// --- Хелперы для сортировки ---
+
+// Парсинг размера в байты
+const parseSizeToBytes = (sizeStr) => {
+  if (!sizeStr) return 0;
+  const num = parseFloat(sizeStr.replace(/,/g, '.').replace(/[^\d.]/g, ''));
+  const lower = sizeStr.toLowerCase();
+  if (lower.includes('гб') || lower.includes('gb')) return num * 1024 * 1024 * 1024;
+  if (lower.includes('мб') || lower.includes('mb')) return num * 1024 * 1024;
+  if (lower.includes('кб') || lower.includes('kb')) return num * 1024;
+  return num;
+};
+
+// Ранжирование качества (чем выше число, тем лучше качество)
+const getResolutionRank = (res) => {
+  if (!res) return 0;
+  if (res.includes('4K') || res.includes('2160')) return 40;
+  if (res.includes('1080')) return 30;
+  if (res.includes('720')) return 20;
+  return 10; // SD или неизвестно
+};
+
 export default function MoviePage({ movie, torrents, pageTitle, seoDescription, seo, techSpecs, recommendations }) {
+  
+  // 1. Список ID заблокированных фильмов (или бери это из пропсов, если добавишь в БД)
+  const BANNED_IDS = [1086260, 604079, 1566700]; // ID фильма "Астронавт" из письма (проверь, это ID TMDB или твой внутренний)
+  
+  // Если у тебя id_slug содержит ID, можно проверять так:
+  const isBanned = BANNED_IDS.some(id => movie?.id === id || movie?.tmdb_id === id);
+
   // --- Состояние для открытия поиска ---
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // 1. Состояние сортировки (по умолчанию: сиды, по убыванию)
+  const [sortConfig, setSortConfig] = useState({ key: 'seeders', direction: 'desc' });
+
+  // 2. Функция обработки клика по заголовку
+  const handleSort = (key) => {
+    setSortConfig((current) => {
+      if (current.key === key) {
+        // Если кликнули по той же колонке, меняем направление
+        return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      // Если новая колонка, сортируем по убыванию (обычно удобнее для торрентов)
+      return { key, direction: 'desc' };
+    });
+  };
+
+  // 3. Вычисление отсортированного массива
+  // Используем useMemo, чтобы не пересчитывать при каждом рендере, если данные не менялись
+  const sortedTorrents = useMemo(() => {
+    if (!torrents) return [];
+    
+    const sorted = [...torrents].sort((a, b) => {
+      const dir = sortConfig.direction === 'asc' ? 1 : -1;
+      
+      switch (sortConfig.key) {
+        case 'name':
+          const titleA = a.torrent_title || '';
+          const titleB = b.torrent_title || '';
+          return titleA.localeCompare(titleB) * dir;
+          
+        case 'size':
+          return (parseSizeToBytes(a.size) - parseSizeToBytes(b.size)) * dir;
+          
+        case 'resolution':
+          const resA = getResolutionRank(a.cached_details?.resolution);
+          const resB = getResolutionRank(b.cached_details?.resolution);
+          return (resA - resB) * dir;
+          
+        case 'bitrate':
+          const bitA = parseFloat(a.cached_details?.bitrate || 0);
+          const bitB = parseFloat(b.cached_details?.bitrate || 0);
+          return (bitA - bitB) * dir;
+          
+        case 'seeders':
+        default:
+          // Сортируем по сидам. Если сидов поровну, то по пирам
+          const seedDiff = (a.seeders || 0) - (b.seeders || 0);
+          if (seedDiff !== 0) return seedDiff * dir;
+          return ((a.leechers || 0) - (b.leechers || 0)) * dir;
+      }
+    });
+    
+    return sorted;
+  }, [torrents, sortConfig]);
+
+  // Хелпер для иконки в заголовке
+  const SortIcon = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) return <ArrowUpDown className="w-3 h-3 opacity-30" />;
+    return sortConfig.direction === 'asc' 
+      ? <ChevronUp className="w-3 h-3 text-primary-600" /> 
+      : <ChevronDown className="w-3 h-3 text-primary-600" />;
+  };
 
   if (!movie) {
     return (
@@ -449,54 +543,114 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
             {/* Torrents Table */}
             <div className="bg-white rounded-3xl shadow-soft border border-gray-100 overflow-hidden">
               <div className="p-6 md:p-8 border-b border-gray-100 bg-gray-50/50">
-                                  <h2 className="text-2xl font-display font-bold text-gray-900 flex items-center gap-3">
-                                    <div className="p-2 bg-primary-100 rounded-lg text-primary-600">
-                                        <Download className="h-6 w-6" />
-                                    </div>
-                                    Скачать {movie.title} через торрент
-                                    </h2>              </div>
+                <h2 className="text-2xl font-display font-bold text-gray-900 flex items-center gap-3">
+                  <Download className="h-6 w-6" />
+                  {isBanned ? 'Файлы недоступны' : `Доступные раздачи для ${movie.title}`}
+                </h2>
+              </div>
 
-              {/* Tech Specs Block */}
-              {techInfoString && (
-                  <div className="p-6 border-b border-gray-100 bg-gray-50/20 text-sm">
-                    <h3 className="font-bold text-gray-900 mb-2">Техническая информация о файлах:</h3>
-                    <p className="text-gray-600" dangerouslySetInnerHTML={{ __html: techInfoString }} />
-                  </div>
-              )}
-
-              {torrents && torrents.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50/80 border-b border-gray-100">
-                      <tr>
-                        <th className="py-4 pl-4 md:pl-6 pr-2 font-semibold text-gray-500 text-xs uppercase tracking-wider">Раздача</th>
-                        
-                        {/* Desktop Columns */}
-                        <th className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider hidden md:table-cell">Размер</th>
-                        <th className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden md:table-cell">Качество</th>
-                        
-                        {/* Новая колонка для Bitrate/HDR на десктопе */}
-                        <th className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden lg:table-cell">Инфо</th>
-                        
-                        <th className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden md:table-cell">S / L</th>
-                        <th className="py-4 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-right"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {torrents.map((torrent, index) => (
-                        <TorrentRow key={index} torrent={torrent} />
-                      ))}
-                    </tbody>
-                  </table>
+              {isBanned ? (
+                <div className="p-10 text-center">
+                   <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                     <X className="h-8 w-8 text-red-500" />
+                   </div>
+                   <h3 className="text-lg font-bold text-gray-800 mb-2">Доступ ограничен</h3>
+                   <p className="text-gray-600">
+                     Контент заблокирован на территории РФ по требованию правообладателя.
+                   </p>
                 </div>
               ) : (
-                <div className="py-20 flex flex-col items-center justify-center text-center px-4">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                    <Download className="h-8 w-8 text-gray-400" />
+                // Твой обычный код таблицы с торрентами
+                torrents && torrents.length > 0 ? (
+                  <>
+                    {/* Tech Specs Block */}
+                    {techInfoString && (
+                        <div className="p-6 border-b border-gray-100 bg-gray-50/20 text-sm">
+                          <h3 className="font-bold text-gray-900 mb-2">Техническая информация о файлах:</h3>
+                          <p className="text-gray-600" dangerouslySetInnerHTML={{ __html: techInfoString }} />
+                        </div>
+                    )}
+  
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50/80 border-b border-gray-100">
+                          <tr>
+                            {/* Имя (Раздача) */}
+                            <th 
+                              onClick={() => handleSort('name')}
+                              className="py-4 pl-4 md:pl-6 pr-2 font-semibold text-gray-500 text-xs uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors group select-none"
+                            >
+                              <div className="flex items-center gap-1">
+                                Раздача
+                                <SortIcon columnKey="name" />
+                              </div>
+                            </th>
+                            
+                            {/* Размер */}
+                            <th 
+                              onClick={() => handleSort('size')}
+                              className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider hidden md:table-cell cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                            >
+                              <div className="flex items-center gap-1">
+                                Размер
+                                <SortIcon columnKey="size" />
+                              </div>
+                            </th>
+                            
+                            {/* Качество */}
+                            <th 
+                              onClick={() => handleSort('resolution')}
+                              className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden md:table-cell cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                Качество
+                                <SortIcon columnKey="resolution" />
+                              </div>
+                            </th>
+                            
+                            {/* Инфо (Битрейт) */}
+                            <th 
+                              onClick={() => handleSort('bitrate')}
+                              className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden lg:table-cell cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                Инфо
+                                <SortIcon columnKey="bitrate" />
+                              </div>
+                            </th>
+                            
+                            {/* Сиды / Пиры */}
+                            <th 
+                              onClick={() => handleSort('seeders')}
+                              className="py-4 px-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-center hidden md:table-cell cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                S / L
+                                <SortIcon columnKey="seeders" />
+                              </div>
+                            </th>
+                            
+                            {/* Пустая колонка для кнопки (без сортировки) */}
+                            <th className="py-4 pr-4 font-semibold text-gray-500 text-xs uppercase tracking-wider text-right"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {sortedTorrents.map((torrent, index) => (
+                            <TorrentRow key={index} torrent={torrent} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-20 flex flex-col items-center justify-center text-center px-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Download className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-gray-900 font-semibold text-lg">Торренты не найдены</p>
+                    <p className="text-gray-500 text-sm mt-1">К сожалению, для этого фильма пока нет активных раздач.</p>
                   </div>
-                  <p className="text-gray-900 font-semibold text-lg">Торренты не найдены</p>
-                  <p className="text-gray-500 text-sm mt-1">К сожалению, для этого фильма пока нет активных раздач.</p>
-                </div>
+                )
               )}
             </div>
 
@@ -516,33 +670,66 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
               </div>
             )}
 
-            {/* --- БЛОК FAQ (ВИЗУАЛЬНЫЙ) --- */}
-            <div className="mt-12 bg-gray-50 rounded-3xl p-6 md:p-8 border border-gray-200">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <HelpCircle className="w-6 h-6 text-primary-600" />
-                Частые вопросы (FAQ)
-              </h3>
-              <div className="space-y-6">
-                {faqData.map((item, index) => (
-                  <div key={index} itemScope itemProp="mainEntity" itemType="https://schema.org/Question">
-                    <h4 className="font-semibold text-gray-900 mb-2 flex items-start gap-2" itemProp="name">
-                      <span className="text-primary-500 font-bold">?</span> {item.q}
-                    </h4>
-                    <div itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
-                      <p className="text-sm text-gray-600 leading-relaxed pl-5 border-l-2 border-gray-200" itemProp="text">
-                        {item.a}
-                      </p>
+            {!isBanned && (
+              <div className="mt-12 bg-gray-50 rounded-3xl p-6 md:p-8 border border-gray-200">
+                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                  <HelpCircle className="w-6 h-6 text-primary-600" />
+                  Частые вопросы (FAQ)
+                </h3>
+                <div className="space-y-6">
+                  {faqData.map((item, index) => (
+                    <div key={index} itemScope itemProp="mainEntity" itemType="https://schema.org/Question">
+                      <h4 className="font-semibold text-gray-900 mb-2 flex items-start gap-2" itemProp="name">
+                        <span className="text-primary-500 font-bold">?</span> {item.q}
+                      </h4>
+                      <div itemScope itemProp="acceptedAnswer" itemType="https://schema.org/Answer">
+                        <p className="text-sm text-gray-600 leading-relaxed pl-5 border-l-2 border-gray-200" itemProp="text">
+                          {item.a}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             
-          </div>
-        </main>
-      </div>
-    </>
-  );
+                      </div>
+                  </main>
+                  {/* Footer */}
+                  <footer className="mt-20 border-t border-gray-200 bg-white/60 backdrop-blur-md">
+                    <div className="container mx-auto px-4 md:px-6 py-10 text-center">
+                      
+                      {/* Логотип (Теперь картинка) */}
+                      <div className="flex items-center justify-center gap-2 mb-4 opacity-90">
+                        <Image 
+                          src="/web_icons/favicon-32x32.png"
+                          alt="CineTorrent Logo" 
+                          width={24} 
+                          height={24} 
+                          className="w-6 h-6 object-contain" 
+                          unoptimized // Для .ico файлов иногда нужно, чтобы не мылилось
+                        />
+                        <span className="font-display font-bold text-gray-800">CineTorrent</span>
+                      </div>
+          
+                      {/* Копирайт */}
+                      <p className="text-gray-500 text-sm mb-3">
+                        &copy; 2025 CineTorrent. All Rights Reserved.
+                      </p>
+          
+                      {/* Контакты: и для людей, и для роботов */}
+                      <div className="text-sm text-gray-500 bg-gray-50/50 inline-block px-4 py-2 rounded-lg border border-gray-100">
+                        <span className="font-medium text-gray-600">Связь с администрацией / DMCA:</span>
+                        <br className="sm:hidden" /> 
+                        <a href="mailto:help@cinetorrent.ru" className="ml-0 sm:ml-2 text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors">
+                          help@cinetorrent.ru
+                        </a>
+                      </div>
+                      
+                    </div>
+                  </footer>
+                </div>
+              </>  );
 }
 
 export async function getServerSideProps({ params }) {

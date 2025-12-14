@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import Image from 'next/image';
 import { getMovies, getRandomMovies, getRandomMoviesByYear } from '../lib/db';
 import MovieRow from '../components/MovieRow';
 import SearchBar from '../components/SearchBar';
@@ -176,21 +177,34 @@ export default function Home({
         {/* Footer */}
         <footer className="mt-20 border-t border-gray-200 bg-white/60 backdrop-blur-md">
           <div className="container mx-auto px-4 md:px-6 py-10 text-center">
-            <div className="flex items-center justify-center gap-2 mb-4 opacity-80">
-              <div className="w-6 h-6 bg-gradient-to-br from-primary-600 to-primary-800 rounded flex items-center justify-center text-white text-[10px] font-bold">CT</div>
+            
+            {/* Логотип (Теперь картинка) */}
+            <div className="flex items-center justify-center gap-2 mb-4 opacity-90">
+              <Image 
+                src="/web_icons/favicon-32x32.png"
+                alt="CineTorrent Logo" 
+                width={24} 
+                height={24} 
+                className="w-6 h-6 object-contain" 
+                unoptimized // Для .ico файлов иногда нужно, чтобы не мылилось
+              />
               <span className="font-display font-bold text-gray-800">CineTorrent</span>
             </div>
-            
-            <p className="text-gray-500 text-sm">
+
+            {/* Копирайт */}
+            <p className="text-gray-500 text-sm mb-3">
               &copy; {currentYear} CineTorrent. All Rights Reserved.
             </p>
-            <p className="mt-3 text-sm text-gray-400">
-              Email: <a href="mailto:help@cinetorrent.ru" className="text-primary-600 hover:text-primary-700 font-medium hover:underline transition-colors">help@cinetorrent.ru</a>
-            </p>
+
+            {/* Контакты: и для людей, и для роботов */}
+            <div className="text-sm text-gray-500 bg-gray-50/50 inline-block px-4 py-2 rounded-lg border border-gray-100">
+              <span className="font-medium text-gray-600">Связь с администрацией / DMCA:</span>
+              <br className="sm:hidden" /> 
+              <a href="mailto:help@cinetorrent.ru" className="ml-0 sm:ml-2 text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors">
+                help@cinetorrent.ru
+              </a>
+            </div>
             
-            <p className="mt-4 text-sm text-gray-500">
-              made by ngk22 <span className="text-red-500">❤️</span>
-            </p>
           </div>
         </footer>
       </div>
