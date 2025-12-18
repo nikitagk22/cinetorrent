@@ -1,4 +1,4 @@
-import { getMovieSlugsPaginated } from '../../lib/db';
+import { getMovieSlugsPaginated, getLatestUpdateDate } from '../../lib/db';
 
 // Лимит тоже ставим 10 000 (должен совпадать с первым файлом)
 const SITEMAP_LIMIT = 1500;
@@ -17,32 +17,36 @@ function escapeXml(unsafe) {
     });
 }
 
-function generateSiteMap(slugs, siteUrl, isFirstPage) {
-  const currentDate = '2025-11-28';
+function generateSiteMap(slugs, siteUrl, isFirstPage, globalLastMod) {
+  
+  const FALLBACK_DATE = '2025-12-04';
   
   let xml = '<?xml version="1.0" encoding="UTF-8"?>';
   xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
   
-  // Главная страница только в первом файле
+  // Главная страница
   if (isFirstPage) {
     xml += `
       <url>
         <loc>${siteUrl}/</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${globalLastMod}</lastmod> 
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
       </url>
     `;
   }
 
-  xml += slugs.map(slug => `
+  // Страницы фильмов
+  xml += slugs.map(slug => {
+    const lastMod = slug.updated_at || FALLBACK_DATE;
+    return `
     <url>
       <loc>${siteUrl}/movies/${escapeXml(slug.id_slug)}</loc>
-      <lastmod>${currentDate}</lastmod>
+      <lastmod>${lastMod}</lastmod>
       <changefreq>weekly</changefreq>
       <priority>0.8</priority>
     </url>
-  `).join('');
+  `}).join('');
 
   xml += '</urlset>';
   return xml;
@@ -71,17 +75,26 @@ export async function getServerSideProps({ req, res, params }) {
       }
 
       const offset = (page - 1) * SITEMAP_LIMIT;
+      
+      // 1. Получаем список фильмов для этой страницы (с их личными датами)
       const slugs = getMovieSlugsPaginated({ limit: SITEMAP_LIMIT, offset });
 
-      // Если страница пустая и это не первая страница -> 404
+      // 2. Получаем самую свежую дату вообще во всей базе (для Главной страницы)
+      // Если мы на 1-й странице сайтмапа, нам нужна эта инфа
+      let globalDate = '2025-12-04';
+      if (page === 1) {
+          const latest = getLatestUpdateDate();
+          if (latest) globalDate = latest;
+      }
+
       if (slugs.length === 0 && page !== 1) {
          return { notFound: true };
       }
 
-      const sitemap = generateSiteMap(slugs, siteUrl, page === 1);
+      // 3. Передаем globalDate в функцию
+      const sitemap = generateSiteMap(slugs, siteUrl, page === 1, globalDate);
 
       res.setHeader('Content-Type', 'text/xml; charset=utf-8');
-      // Ставим кэш поменьше (1 час), чтобы Google быстрее увидел изменения
       res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=1800');
       res.write(sitemap);
       res.end();
@@ -92,7 +105,5 @@ export async function getServerSideProps({ req, res, params }) {
     }
   }
 
-  return {
-    props: {},
-  };
+  return { props: {} };
 }

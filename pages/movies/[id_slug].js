@@ -58,7 +58,7 @@ const getResolutionRank = (res) => {
 export default function MoviePage({ movie, torrents, pageTitle, seoDescription, seo, techSpecs, recommendations }) {
   
   // 1. Список ID заблокированных фильмов (или бери это из пропсов, если добавишь в БД)
-  const BANNED_IDS = [1086260, 604079, 1566700]; // ID фильма "Астронавт" из письма (проверь, это ID TMDB или твой внутренний)
+  const BANNED_IDS = [1086260, 604079, 156670, 1016084]; // ID фильма "Астронавт" из письма (проверь, это ID TMDB или твой внутренний)
   
   // Если у тебя id_slug содержит ID, можно проверять так:
   const isBanned = BANNED_IDS.some(id => movie?.id === id || movie?.tmdb_id === id);
@@ -556,7 +556,7 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
                    </div>
                    <h3 className="text-lg font-bold text-gray-800 mb-2">Доступ ограничен</h3>
                    <p className="text-gray-600">
-                     Контент заблокирован на территории РФ по требованию правообладателя.
+                     Контент заблокирован по требованию правообладателя.
                    </p>
                 </div>
               ) : (

@@ -1,22 +1,21 @@
-import { getMovieSlugsCount } from '../lib/db';
+import { getMovieSlugsCount, getMovieSlugsPaginated } from '../lib/db';
 
-// Устанавливаем лимит 10 000
+// Лимит 1500 (должен совпадать с [filename].js)
 const SITEMAP_LIMIT = 1500;
+const FALLBACK_DATE = '2025-12-04';
 
-function generateSitemapIndex(totalPages, siteUrl) {
-  const currentDate = '2025-12-04';
-
+function generateSitemapIndex(sitemapsData) {
   let xml = '<?xml version="1.0" encoding="UTF-8"?>';
   xml += '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
 
-  for (let i = 0; i < totalPages; i++) {
+  sitemapsData.forEach(sitemap => {
     xml += `
       <sitemap>
-        <loc>${siteUrl}/sitemaps/sitemap-${i + 1}.xml</loc>
-        <lastmod>${currentDate}</lastmod>
+        <loc>${sitemap.loc}</loc>
+        <lastmod>${sitemap.lastmod}</lastmod>
       </sitemap>
     `;
-  }
+  });
 
   xml += '</sitemapindex>';
   return xml;
@@ -35,7 +34,41 @@ export async function getServerSideProps({ req, res }) {
       const safeTotal = totalMovies > 0 ? totalMovies : 1;
       const totalPages = Math.ceil(safeTotal / SITEMAP_LIMIT);
 
-      const sitemapIndex = generateSitemapIndex(totalPages, siteUrl);
+      const sitemapsData = [];
+
+      // Проходим по всем страницам сайтмапа
+      for (let i = 0; i < totalPages; i++) {
+        const pageNum = i + 1;
+        const offset = i * SITEMAP_LIMIT;
+        
+        // Запрашиваем фильмы только для текущей страницы
+        const slugs = getMovieSlugsPaginated({ limit: SITEMAP_LIMIT, offset });
+
+        let maxDateInPage = null;
+        
+        // Ищем самую свежую дату среди фильмов ТОЛЬКО этой страницы
+        if (slugs && slugs.length > 0) {
+          const dates = slugs
+            .map(s => s.updated_at)
+            .filter(d => d); // Убираем пустые даты
+          
+          if (dates.length > 0) {
+             // Сортируем по убыванию (самая новая дата первая)
+             dates.sort((a, b) => (a > b ? -1 : 1));
+             maxDateInPage = dates[0];
+          }
+        }
+
+        // Если нашли дату у фильмов — ставим её. Если нет — ставим заглушку.
+        const finalLastMod = maxDateInPage || FALLBACK_DATE;
+
+        sitemapsData.push({
+          loc: `${siteUrl}/sitemaps/sitemap-${pageNum}.xml`,
+          lastmod: finalLastMod
+        });
+      }
+
+      const sitemapIndex = generateSitemapIndex(sitemapsData);
 
       res.setHeader('Content-Type', 'text/xml; charset=utf-8');
       // Кэш на 12 часов
@@ -49,7 +82,5 @@ export async function getServerSideProps({ req, res }) {
     }
   }
 
-  return {
-    props: {},
-  };
+  return { props: {} };
 }
