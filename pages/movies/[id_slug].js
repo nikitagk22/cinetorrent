@@ -396,6 +396,7 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
                     - lg:h-auto для ПК (растягивается на высоту контента)
                     - object-cover (заполняет всё пространство без серых полос)
                 */}
+                {/* Возвращаем оригинальную структуру: h-auto позволяет тянуться, object-cover заполняет всё */}
                 <div className="lg:col-span-3 relative h-[500px] lg:h-auto bg-gray-200 min-h-[400px]">
                   {movie.local_poster_path ? (
                     <Image
@@ -404,14 +405,18 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
                       fill
                       className="object-cover"
                       priority
-                      sizes="(max-width: 768px) 100vw, 33vw"
+                      // --- НАСТРОЙКИ КАЧЕСТВА ---
+                      unoptimized // 1. Самое важное: загружать оригинальный файл "как есть" с диска, без ресайза Next.js
+                      quality={100} // 2. Максимальное качество JPEG (на случай, если unoptimized уберете)
+                      sizes="100vw" // 3. Обман браузера: "Картинка будет на весь экран, дай мне самую большую версию"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-400">
                       <Film className="h-20 w-20" />
                     </div>
                   )}
-                  {/* Тень для мобилок, чтобы текст читался, если налезет */}
+                  
+                  {/* Тень для мобилок */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent lg:hidden" />
                 </div>
 
