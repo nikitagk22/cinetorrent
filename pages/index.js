@@ -1,7 +1,15 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
-import { getMovies, getRandomMovies, getRandomMoviesByYear } from '../lib/db';
+import { 
+    getMovies, 
+    getRandomMovies, 
+    // Импортируем наши новые функции
+    getNowPlayingMoviesApi, 
+    getPopularMoviesApi, 
+    getTopRatedMoviesApi,
+    getTrendingMoviesApi
+} from '../lib/db';
 import MovieRow from '../components/MovieRow';
 import SearchBar from '../components/SearchBar';
 import MovieCard from '../components/MovieCard';
@@ -214,21 +222,20 @@ export default function Home({
 
 export async function getServerSideProps() {
   try {
-    const currentYear = new Date().getFullYear();
+    const currentYear = new Date().getFullYear(); // Можно использовать для заголовков, если нужно
+
     const [newMovies2025, mostPopular, mostViewed, randomMovies] =
       await Promise.all([
-        getRandomMoviesByYear(currentYear, 20),
-        getMovies({
-          limit: 20,
-          orderBy: 'vote_average',
-          orderDirection: 'DESC',
-          minVoteCount: 600,
-        }),
-        getMovies({
-          limit: 20,
-          orderBy: 'vote_count',
-          orderDirection: 'DESC',
-        }),
+        // 1. Новинки (Теперь с API "Now Playing")
+        getNowPlayingMoviesApi(),
+        
+        // 2. Популярные (С API "Popular")
+        getPopularMoviesApi(),
+        
+        // 3. Сейчас смотрят (Берем "Top Rated" с API, либо тоже Popular, либо Trending если добавите endpoint)
+        getTrendingMoviesApi(),
+        
+        // 4. Случайные (Оставляем локально для разнообразия внизу страницы)
         getRandomMovies(100),
       ]);
       

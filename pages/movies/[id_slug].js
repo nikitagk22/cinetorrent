@@ -17,7 +17,7 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
-import { getMovieByIdSlug, getTorrentsByTmdbId, getTorrentDetailsByInfoHash, getRandomMovies } from '../../lib/db';
+import { getMovieByIdSlug, getTorrentsByTmdbId, getTorrentDetailsByInfoHash, getRandomMovies, getRecommendationsApi } from '../../lib/db';
 import TorrentRow from '../../components/TorrentRow';
 import Breadcrumbs from '../../components/Breadcrumbs';
 import SearchBar from '../../components/SearchBar';
@@ -804,7 +804,20 @@ export async function getServerSideProps({ params }) {
     const resolutionOrder = ['4K', '1080p', '720p'];
     const uniqueResolutions = [...availableResolutions].sort((a, b) => resolutionOrder.indexOf(a) - resolutionOrder.indexOf(b));
 
-    const recommendations = getRandomMovies(12);
+    // 1. Пробуем получить умные рекомендации через API (закэшированные в cache.db)
+    let recommendations = await getRecommendationsApi(movie.id);
+
+    // 2. Если API вернул мало фильмов (или фильм старый и API молчит, или фильмов нет у нас в базе)
+    if (!recommendations || recommendations.length < 5) {
+        // Добиваем случайными фильмами, чтобы блок не был пустым
+        const randomRecs = getRandomMovies(12);
+        
+        // Объединяем, убирая дубликаты (чтобы один фильм не повторялся)
+        const existingIds = new Set(recommendations.map(r => r.id));
+        const filteredRandom = randomRecs.filter(r => !existingIds.has(r.id));
+        
+        recommendations = [...recommendations, ...filteredRandom].slice(0, 12);
+    }
 
     return {
       props: {
