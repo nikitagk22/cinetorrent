@@ -8,6 +8,7 @@ tmdb_data/*.db
 tmdb_data/*.db-shm
 tmdb_data/*.json
 tmdb_data/*.db-wal
+torrent_cache/*.torrent
 # Testing
 /coverage
 
