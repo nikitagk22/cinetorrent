@@ -1,40 +1,95 @@
 import Head from 'next/head';
-import Script from 'next/script'; // <--- ЭТОЙ СТРОКИ НЕ ХВАТАЛО
+import Script from 'next/script';
 import '../styles/globals.css';
+import { useRouter } from 'next/router';
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter();
+
+  // Логика: Реклама показывается везде, КРОМЕ главной страницы ('/')
+  const isAdPage = router.pathname !== '/';
+
   return (
     <>
       <Head>
         {/* --- ГЛОБАЛЬНЫЕ SEO НАСТРОЙКИ --- */}
-
-        {/* 1. Верификация Вебмастеров */}
         <meta name="yandex-verification" content="335f25316f9d4261" /> 
-        
-        {/* 2. Технические настройки */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="theme-color" content="#ffffff" />
         <meta name="format-detection" content="telephone=no" />
-
-        {/* 3. Гео и Язык */}
         <meta httpEquiv="content-language" content="ru" />
         <meta name="geo.region" content="RU" />
 
-        {/* 4. Иконки */}
         <link rel="apple-touch-icon" sizes="180x180" href="/web_icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/web_icons/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/web_icons/favicon-16x16.png" />
         <link rel="manifest" href="/web_icons/site.webmanifest" />
         <meta name="msapplication-config" content="/web_icons/browserconfig.xml" />
 
-        {/* 5. Open Graph */}
         <meta property="og:locale" content="ru_RU" />
         <meta property="og:site_name" content="CineTorrent" />
         <meta property="og:type" content="website" />
+
+        {/* 
+            ==============================================
+            РЕКЛАМНЫЙ БЛОК (ADLOOK) - СТРОГО ВНУТРИ HEAD
+            ==============================================
+            Выполняем требование модератора: "цельный код установить между тегами <head>"
+        */}
+        {isAdPage && (
+          <>
+            {/* 1. Загрузчик */}
+            <script 
+              src="https://sdk.adlook.tech/inventory/core.js" 
+              async 
+              type="text/javascript" 
+            />
+
+            {/* 2. Инициализация (Fly-roll) 
+                Используем dangerouslySetInnerHTML, чтобы React позволил вставить 
+                инлайн-скрипт прямо внутрь Head без экранирования.
+            */}
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `
+                  (function UTCoreInitialization() {
+                    if (window.UTInventoryCore) {
+                      new window.UTInventoryCore({
+                        type: "sticky",
+                        host: 5546,
+                        content: false,
+                        adaptive: true,
+                        width: 400,
+                        height: 225,
+                        playMode: "autoplay",
+                        align: "right",
+                        verticalAlign: "bottom",
+                        openTo: "open-creativeView",
+                        infinity: true,
+                        infinityTimer: 1,
+                        interfaceType: 0,
+                        withoutIframe: true,
+                        mobile: {
+                          align: "center",
+                          verticalAlign: "bottom",
+                          mobileStickyHeight: 25,
+                        }
+                      });
+                      return;
+                    }
+                    if (!window.UTInventoryCore) {
+                      setTimeout(UTCoreInitialization, 100);
+                    }
+                  })();
+                `,
+              }}
+            />
+          </>
+        )}
       </Head>
-      
+
       {/* --- Google Analytics (GA4) --- */}
       <Script
         src="https://www.googletagmanager.com/gtag/js?id=G-SW8Q3SLQ4S"
@@ -80,7 +135,6 @@ export default function App({ Component, pageProps }) {
         </div>
       </noscript>
       
-      {/* Фиксированный фон */}
       <div className="fixed-bg" />
       
       <Component {...pageProps} />

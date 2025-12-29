@@ -17,7 +17,14 @@ import {
   ChevronUp,
   ChevronDown
 } from 'lucide-react';
-import { getMovieByIdSlug, getTorrentsByTmdbId, getTorrentDetailsByInfoHash, getRandomMovies, getRecommendationsApi } from '../../lib/db';
+import { 
+  getMovieByIdSlug, 
+  getTorrentsByTmdbId, 
+  getTorrentDetailsByInfoHash, 
+  getRandomMovies, 
+  getRecommendationsApi,
+  ensureMovieTrailer
+} from '../../lib/db';
 import TorrentRow from '../../components/TorrentRow';
 import Breadcrumbs from '../../components/Breadcrumbs';
 import SearchBar from '../../components/SearchBar';
@@ -58,7 +65,7 @@ const getResolutionRank = (res) => {
 export default function MoviePage({ movie, torrents, pageTitle, seoDescription, seo, techSpecs, recommendations }) {
   
   // 1. Список ID заблокированных фильмов (или бери это из пропсов, если добавишь в БД)
-  const BANNED_IDS = [1086260, 604079, 156670, 1016084]; // ID фильма "Астронавт" из письма (проверь, это ID TMDB или твой внутренний)
+  const BANNED_IDS = [1086260, 604079, 156670, 1016084, 1160360, 1168166]; // ID фильма "Астронавт" из письма (проверь, это ID TMDB или твой внутренний)
   
   // Если у тебя id_slug содержит ID, можно проверять так:
   const isBanned = BANNED_IDS.some(id => movie?.id === id || movie?.tmdb_id === id);
@@ -739,13 +746,21 @@ export default function MoviePage({ movie, torrents, pageTitle, seoDescription, 
 
 export async function getServerSideProps({ params }) {
   try {
-    const movie = getMovieByIdSlug(params.id_slug);
+    // 1. Получаем фильм из базы (как и было)
+    const movieRaw = getMovieByIdSlug(params.id_slug);
     
-    if (!movie) {
-      return {
-        notFound: true,
-      };
+    if (!movieRaw) {
+      return { notFound: true };
     }
+
+    // --- НОВАЯ ЛОГИКА: ПРОВЕРКА И ЗАГРУЗКА ТРЕЙЛЕРА ---
+    // Если трейлера нет, скрипт сходит в API, найдет его,
+    // запишет в БД и вернет нам ключ.
+    const freshTrailerKey = await ensureMovieTrailer(movieRaw);
+    
+    // Создаем копию объекта фильма с обновленным ключом (для рендера прямо сейчас)
+    const movie = { ...movieRaw, trailer_key: freshTrailerKey || movieRaw.trailer_key };
+    // ---------------------------------------------------
 
     const torrents = getTorrentsByTmdbId(movie.id).map(torrent => {
       // Convert size units to Russian

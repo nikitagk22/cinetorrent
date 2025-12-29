@@ -60,7 +60,8 @@ export async function getServerSideProps({ req, res }) {
         }
 
         // Если нашли дату у фильмов — ставим её. Если нет — ставим заглушку.
-        const finalLastMod = maxDateInPage || FALLBACK_DATE;
+        const rawLastMod = maxDateInPage || FALLBACK_DATE;
+        const finalLastMod = rawLastMod.split('T')[0];
 
         sitemapsData.push({
           loc: `${siteUrl}/sitemaps/sitemap-${pageNum}.xml`,

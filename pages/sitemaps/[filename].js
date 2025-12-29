@@ -38,7 +38,7 @@ function generateSiteMap(slugs, siteUrl, isFirstPage, globalLastMod) {
 
   // Страницы фильмов
   xml += slugs.map(slug => {
-    const lastMod = slug.updated_at || FALLBACK_DATE;
+    const lastMod = (slug.updated_at || FALLBACK_DATE).split('T')[0];
     return `
     <url>
       <loc>${siteUrl}/movies/${escapeXml(slug.id_slug)}</loc>
@@ -84,7 +84,7 @@ export async function getServerSideProps({ req, res, params }) {
       let globalDate = '2025-12-04';
       if (page === 1) {
           const latest = getLatestUpdateDate();
-          if (latest) globalDate = latest;
+          if (latest) globalDate = latest.split('T')[0];
       }
 
       if (slugs.length === 0 && page !== 1) {
