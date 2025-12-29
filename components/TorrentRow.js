@@ -1,7 +1,71 @@
-import { Magnet, Video, Monitor, Mic, FileText, Signal, Star, Zap } from 'lucide-react'; // Добавил Zap для битрейта (или можно Signal)
+import { useState } from 'react';
+import { Magnet, Video, Monitor, Mic, FileText, Signal, Star, Zap, FileDown, Loader2 } from 'lucide-react'; // Добавил Zap для битрейта (или можно Signal)
 
 export default function TorrentRow({ torrent }) {
   const details = torrent.cached_details || {};
+  
+  // Состояние загрузки торрент-файла
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // --- ФУНКЦИЯ СКАЧИВАНИЯ ТОРРЕНТА ---
+  const handleTorrentDownload = async (e) => {
+    e.preventDefault();
+    if (isGenerating) return;
+
+    setIsGenerating(true);
+    
+    try {
+        // ИЗМЕНЕНИЕ ЗДЕСЬ: Передаем название торрента на сервер
+        const params = new URLSearchParams({ 
+          magnet: torrent.magnet,
+          // Берем заголовок, если его нет — fallback, обрезаем до 100 символов чтобы URL не был гигантским
+          title: (torrent.torrent_title || 'movie').substring(0, 100)
+        });
+        
+        const response = await fetch(`/api/torrent-file?${params}`);
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Ошибка генерации');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Пытаемся взять имя файла из заголовков ответа (сервер его там красиво сформирует)
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let fileName = 'download.torrent';
+        
+        // Парсим имя файла из заголовка (поддержка UTF-8)
+        if (contentDisposition) {
+             // Сначала пробуем современный стандарт filename*=UTF-8''...
+             const starMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+             if (starMatch && starMatch[1]) {
+                 fileName = decodeURIComponent(starMatch[1]);
+             } else {
+                 // Иначе обычный filename="..."
+                 const quoteMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                 if (quoteMatch && quoteMatch[1]) {
+                     fileName = decodeURIComponent(quoteMatch[1]);
+                 }
+             }
+        }
+        
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+    } catch (error) {
+        alert(`Не удалось создать .torrent файл: ${error.message}. Пожалуйста, используйте Magnet-ссылку.`);
+    } finally {
+        setIsGenerating(false);
+    }
+  };
+
   
   // Хелпер для цвета качества
   const getQualityColor = (res) => {
@@ -197,18 +261,57 @@ export default function TorrentRow({ torrent }) {
         </div>
       </td>
       
-      {/* Кнопка скачивания */}
-      <td className="py-4 pl-2 pr-4 text-right w-[60px] md:w-auto align-middle">
-        <div className="flex items-center justify-end">
+      {/* Кнопки действий */}
+      <td className="py-4 pl-2 pr-4 text-right w-auto align-middle">
+        <div className="flex items-center justify-end gap-3">
+          
+          {/* 1. КНОПКА .TORRENT (Голубая) */}
+          {torrent.magnet && (
+            <button
+              onClick={handleTorrentDownload}
+              disabled={isGenerating}
+              className={`group relative inline-flex items-center justify-center w-11 h-11 rounded-2xl border transition-all duration-300 ease-out
+                ${isGenerating 
+                    ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-wait' 
+                    : 'bg-sky-50 text-sky-600 border-sky-100 hover:bg-sky-500 hover:text-white hover:border-sky-500 hover:-translate-y-1 hover:shadow-lg hover:shadow-sky-200'
+                }`}
+              title="Скачать .torrent файл"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <FileDown className="h-5 w-5" />
+              )}
+              
+              {/* Бейдж FILE (появляется при наведении) */}
+              {!isGenerating && (
+                <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-10">
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-sky-100 text-[9px] font-bold text-sky-600 shadow-sm whitespace-nowrap">
+                    FILE
+                  </span>
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* 2. КНОПКА MAGNET (Фиолетовая) */}
           {torrent.magnet && (
             <a
               href={torrent.magnet}
-              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary-50 text-primary-600 hover:bg-primary-600 hover:text-white transition-all shadow-sm hover:shadow-md"
-              title="Скачать Magnet"
+              className="group relative inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-600 hover:text-white hover:border-purple-600 hover:-translate-y-1 hover:shadow-lg hover:shadow-purple-200 transition-all duration-300 ease-out"
+              title="Скачать Magnet-ссылку"
             >
               <Magnet className="h-5 w-5" />
+
+              {/* Бейдж MAGNET (появляется при наведении) */}
+              <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-10">
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-purple-100 text-[9px] font-bold text-purple-600 shadow-sm whitespace-nowrap">
+                    MAGNET
+                  </span>
+              </span>
             </a>
           )}
+          
         </div>
       </td>
     </tr>

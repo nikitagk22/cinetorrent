@@ -92,7 +92,7 @@ class JacredParser:
     async def parse_movie(self, tmdb_id: int, search_query: str, target_year: int, enable_year_filter: bool) -> dict:
         page = await self.context.new_page()
         try:
-            logger.info(f"🌐 Ищем: {search_query} (Фильтр по году: {enable_year_filter})")
+            logger.info(f"🌐 Ищем: '{search_query}' (Фильтр по году: {enable_year_filter})")
             
             try:
                 await page.goto('https://jacred.xyz', wait_until='domcontentloaded', timeout=15000)
@@ -305,14 +305,19 @@ async def main():
     
     logger.info(f"🎥 Фильм: {title} ({movie_year}) | KP: {kp_id}")
 
-    # Выбор стратегии поиска
-    if kp_id:
-        search_query = f"kp{kp_id}"
-    elif title:
+    # === ИЗМЕНЕННАЯ ЛОГИКА ВЫБОРА ПОИСКОВОГО ЗАПРОСА ===
+    # Если KP_ID отсутствует (None) или равен -1 -> ищем по названию
+    if kp_id is None or kp_id == -1:
+        if not title:
+             logger.error("❌ У фильма нет названия, поиск невозможен.")
+             return
+        logger.info(f"⚠️ KP ID невалиден ({kp_id}). Принудительный поиск по названию: '{title}'")
         search_query = title
     else:
-        logger.error("У фильма нет ни названия, ни KP ID.")
-        return
+        # Иначе ищем по ID Кинопоиска
+        logger.info(f"✅ KP ID валиден ({kp_id}). Поиск по ID.")
+        search_query = f"kp{kp_id}"
+    # ===================================================
 
     parser = JacredParser()
     await parser.start()

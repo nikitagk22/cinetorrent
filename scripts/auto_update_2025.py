@@ -283,6 +283,7 @@ async def main():
     logger.info(f"🚀 Запуск Updater (Production Mode). Год: {TARGET_YEAR}")
     
     async with aiosqlite.connect(TMDB_DB_PATH) as db:
+        # Берем все фильмы за текущий год
         async with db.execute("SELECT id, title, kp_id FROM items_minimal WHERE year = ?", (TARGET_YEAR,)) as cursor:
             movies = await cursor.fetchall()
             
@@ -291,14 +292,27 @@ async def main():
         return
 
     queue = []
+    # === ИЗМЕНЕННАЯ ЛОГИКА ОЧЕРЕДИ ===
     for m in movies:
         tmdb_id = m[0]
         title = m[1]
         kp_id = m[2]
-        if kp_id: search_query = f"kp{kp_id}"
-        elif title: search_query = title
-        else: continue 
+
+        search_query = None
+        
+        # Если kp_id нет (None) или он помечен как несуществующий (-1) -> ищем по Названию
+        if kp_id is None or kp_id == -1:
+            if title:
+                search_query = title
+            else:
+                # Если нет ни ID, ни названия - пропускаем
+                continue
+        else:
+            # Если есть нормальный kp_id -> ищем по нему
+            search_query = f"kp{kp_id}"
+            
         queue.append({'id': tmdb_id, 'query': search_query})
+    # =================================
 
     logger.info(f"В очереди: {len(queue)} фильмов.")
     
