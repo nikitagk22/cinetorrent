@@ -56,6 +56,7 @@ export default function TorrentRow({ torrent }) {
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
+        ym('reachGoal', 'TORRENT_FILE_DOWNLOAD'); // Yandex.Metrika goal
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
@@ -298,6 +299,7 @@ export default function TorrentRow({ torrent }) {
           {torrent.magnet && (
             <a
               href={torrent.magnet}
+              onClick={() => ym('reachGoal', 'MAGNET_LINK_CLICK')} // Yandex.Metrika goal
               className="group relative inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-600 hover:text-white hover:border-purple-600 hover:-translate-y-1 hover:shadow-lg hover:shadow-purple-200 transition-all duration-300 ease-out"
               title="Скачать Magnet-ссылку"
             >
