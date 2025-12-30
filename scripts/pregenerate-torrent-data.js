@@ -98,7 +98,7 @@ const PARSER_CONFIG = {
     audio_track: {
         // Огромный список студий и типов озвучек.
         // Важно: Фразы с пробелами (Red Head Sound) должны идти раньше коротких (RHS), чтобы RegExp жадно захватил длинное.
-        regex: /\b(Red Head Sound|RHS|Bluebird|HDRezka|Jaskier|TVShows|NewStudio|BaibaKo|AlexFilm|LostFilm|Кубик в [Кк]убе|Octopus|LineFilm|Cold Film|AlphaProject|TVG|Good People|Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|Дубляж|Dub|MVO|DVO|AVO|Original|ENG|RUS|UKR)\b/ig,
+        regex: /\b(Red Head Sound|RHS|Bluebird|HDRezka|Rezka|Jaskier|TVShows|NewStudio|BaibaKo|AlexFilm|LostFilm|Кубик в [Кк]убе|Octopus|LineFilm|Cold Film|AlphaProject|TVG|Good People|Pazl Voice|Ultradox|RuDub|Sound Film|ViruseProject|IdeaFilm|Novamedia|Кириллица|Kerob|Sunshine Studio|NewComers|LakeFilms|HamsterStudio|Paramount Comedy|Кураж-Бамбей|Kuraj-Bambey|Сыендук|Syenduk|AniLibria|AniDUB|AnimeVost|SHIZA Project|Jam Club|Studio Band|Студийная Банда|SovetRomantica|Kansai|AniStar|AniFilm|Dream Cast|AniMaunt|AniRise|Amazing Dubbing|Гаврилов|Михалев|Володарский|Сербин|Живов|Пучков|Гоблин|Goblin|Дохалов|Визгунов|Карцев|Иванов|Санаев|Есарев|Штейн|Либерти|Вартан|Горчаков|Котов|Яковлев|Гланц|Glanz|Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|SDI Media|Киномания|Tycoon|CPIG|Позитив|Видеосервис|Varus Video|West Video|iTunes|Amedia|Netflix|Дубляж|Dub|MVO|DVO|AVO|Original|ENG|RUS|UKR)\b/ig,
         type: 'audio_lang',
         transform: (match) => {
             // Убираем лишнее, нормализуем

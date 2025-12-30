@@ -26,11 +26,47 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 # --- REGEX CONFIG (Метаданные) ---
 REGEX_CONFIG = {
-    'resolution': {'pattern': re.compile(r'\b(3840x2160|4K|2160p|1920x1080|1080p|1280x720|720p)\b', re.IGNORECASE), 'type': 'resolution'},
-    'audio_channels': {'pattern': re.compile(r'\b(5\.1|7\.1)\b', re.IGNORECASE), 'type': 'audio_channels'},
-    'quality': {'pattern': re.compile(r'\b(HEVC|HDR10\+|HDR10|HDR|Dolby Vision|DV|BDRemux|BluRay|Web-DL|Hybrid|IMAX)\b', re.IGNORECASE), 'type': 'quality'},
-    'audio_track': {'pattern': re.compile(r'\b(Red Head Sound|RHS|Bluebird|HDRezka|Jaskier|TVShows|NewStudio|BaibaKo|AlexFilm|LostFilm|Кубик в [Кк]убе|Octopus|LineFilm|Cold Film|AlphaProject|TVG|Good People|Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|Дубляж|Dub|MVO|DVO|AVO|Original|ENG|RUS|UKR)\b', re.IGNORECASE), 'type': 'audio_lang'},
-    'subtitles': {'pattern': re.compile(r'Sub\s*[:(]\s*([^)]+)\)?', re.IGNORECASE), 'type': 'subtitles'}
+    'resolution': {
+        'pattern': re.compile(r'\b(3840x2160|4K|2160p|1920x1080|1080p|1280x720|720p)\b', re.IGNORECASE), 
+        'type': 'resolution'
+    },
+    'audio_channels': {
+        'pattern': re.compile(r'\b(5\.1|7\.1)\b', re.IGNORECASE), 
+        'type': 'audio_channels'
+    },
+    'quality': {
+        'pattern': re.compile(r'\b(HEVC|HDR10\+|HDR10|HDR|Dolby Vision|DV|BDRemux|BluRay|Web-DL|Hybrid|IMAX)\b', re.IGNORECASE), 
+        'type': 'quality'
+    },
+    'audio_track': {
+        'pattern': re.compile(r'\b('
+                              # --- СОВРЕМЕННЫЕ СТУДИИ / РЕЛИЗ ГРУППЫ ---
+                              r'Red Head Sound|RHS|Bluebird|HDRezka|Rezka|Jaskier|'
+                              r'TVShows|NewStudio|BaibaKo|AlexFilm|LostFilm|Кубик в [Кк]убе|'
+                              r'Octopus|LineFilm|Cold Film|AlphaProject|TVG|Good People|'
+                              r'Pazl Voice|Ultradox|RuDub|Sound Film|ViruseProject|IdeaFilm|Novamedia|Кириллица|'
+                              r'Kerob|Sunshine Studio|NewComers|LakeFilms|HamsterStudio|Paramount Comedy|'
+                              r'Кураж-Бамбей|Kuraj-Bambey|Сыендук|Syenduk|'
+                              # --- АНИМЕ ---
+                              r'AniLibria|AniDUB|AnimeVost|SHIZA Project|Jam Club|Studio Band|Студийная Банда|'
+                              r'SovetRomantica|Kansai|AniStar|AniFilm|Dream Cast|AniMaunt|AniRise|Amazing Dubbing|'
+                              # --- АВТОРСКИЕ / VHS (ЛЕГЕНДЫ) ---
+                              r'Гаврилов|Михалев|Володарский|Сербин|Живов|Пучков|Гоблин|Goblin|'
+                              r'Дохалов|Визгунов|Карцев|Иванов|Санаев|Есарев|Штейн|Либерти|Вартан|Горчаков|'
+                              r'Котов|Яковлев|Гланц|Glanz|'
+                              # --- ОФИЦИАЛЬНЫЕ / ПРОФЕССИОНАЛЬНЫЕ ---
+                              r'Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|SDI Media|ДБ|'
+                              r'Киномания|Tycoon|CPIG|Позитив|Видеосервис|Varus Video|West Video|'
+                              r'iTunes|Amedia|Netflix|'
+                              # --- ОБЩИЕ МЕТКИ ---
+                              r'Дубляж|Dub|MVO|DVO|AVO|Original|ENG|RUS|UKR'
+                              r')\b', re.IGNORECASE), 
+        'type': 'audio_lang'
+    },
+    'subtitles': {
+        'pattern': re.compile(r'Sub\s*[:(]\s*([^)]+)\)?', re.IGNORECASE), 
+        'type': 'subtitles'
+    }
 }
 
 # --- КЛАСС ПАРСЕРА ---

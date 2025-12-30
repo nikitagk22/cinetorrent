@@ -1,17 +1,22 @@
 import sqlite3
 import re
 import json
-import sys
 import os
+import sys
 from pathlib import Path
+from tqdm import tqdm
 
-# --- КОНФИГУРАЦИЯ ПУТЕЙ ---
+# --- НАСТРОЙКИ ---
+# Если True: скрипт проверит ВСЕ торренты заново (нужно, чтобы найти новые озвучки в старых раздачах).
+# Если False: скрипт пропустит те, у которых метаданные уже заполнены.
+RESCAN_ALL = True 
+
 BASE_DIR = Path(os.getcwd())
 TMDB_DB_PATH = BASE_DIR / "tmdb_data" / "tmdb_minimal_no_original.db"
 TORRENTS_DB_PATH = BASE_DIR / "tmdb_data" / "torrents.db"
 DATA_DB_PATH = BASE_DIR / "tmdb_data" / "torrents_data.db"
 
-# --- ТВОИ НАСТРОЙКИ REGEX ---
+# --- РАСШИРЕННЫЙ REGEX CONFIG ---
 REGEX_CONFIG = {
     'resolution': {
         'pattern': re.compile(r'\b(3840x2160|4K|2160p|1920x1080|1080p|1280x720|720p)\b', re.IGNORECASE), 
@@ -42,7 +47,7 @@ REGEX_CONFIG = {
                               r'Дохалов|Визгунов|Карцев|Иванов|Санаев|Есарев|Штейн|Либерти|Вартан|Горчаков|'
                               r'Котов|Яковлев|Гланц|Glanz|'
                               # --- ОФИЦИАЛЬНЫЕ / ПРОФЕССИОНАЛЬНЫЕ ---
-                              r'Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|SDI Media|'
+                              r'Пифагор|Flarrow Films|FF|Videofilm|Мосфильм|Невафильм|SDI Media|ДБ|'
                               r'Киномания|Tycoon|CPIG|Позитив|Видеосервис|Varus Video|West Video|'
                               r'iTunes|Amedia|Netflix|'
                               # --- ОБЩИЕ МЕТКИ ---
@@ -56,7 +61,7 @@ REGEX_CONFIG = {
     }
 }
 
-# --- ТВОИ ФУНКЦИИ ---
+# --- ФУНКЦИИ ---
 def parse_size_to_bytes(size_str):
     if not size_str: return 0
     match = re.search(r'(\d+(\.\d+)?)\s*(GB|MB|KB|TB|ГБ|МБ|КБ|ТБ)', str(size_str), re.IGNORECASE)
@@ -80,6 +85,7 @@ def analyze_title(title):
     if not title: return {}
     found_tags = set()
     result = {'resolution': 'N/A', 'audio_tags': [], 'quality_tags': [], 'hdr_type': 'SDR', 'codec': None}
+    
     for key, config in REGEX_CONFIG.items():
         matches = config['pattern'].finditer(title)
         for match in matches:
@@ -95,141 +101,150 @@ def analyze_title(title):
                         found_tags.add(clean_tag.lower())
                         result['audio_tags'].append(clean_tag)
                 continue
+            
             clean_content = content.strip()
             if clean_content.lower() in found_tags: continue
             found_tags.add(clean_content.lower())
+            
             if config['type'] == 'resolution': result['resolution'] = clean_content
             elif config['type'] == 'quality': result['quality_tags'].append(clean_content)
             elif config['type'] in ['audio_lang', 'audio_channels']: result['audio_tags'].append(clean_content)
+            
     res = result['resolution']
     if res and res.lower() == '4k': result['resolution'] = '4K'
     elif not res: result['resolution'] = 'N/A'
+    
     quality_combined = " ".join(result['quality_tags'])
     if re.search(r'Dolby|DV', quality_combined, re.IGNORECASE): result['hdr_type'] = 'Dolby Vision'
     elif re.search(r'HDR', quality_combined, re.IGNORECASE): result['hdr_type'] = 'HDR'
+    
     if re.search(r'x265|h265|hevc', title, re.IGNORECASE): result['codec'] = 'HEVC'
     elif re.search(r'x264|h264|avc', title, re.IGNORECASE): result['codec'] = 'H.264'
+    
     return result
 
 # --- ОСНОВНАЯ ЛОГИКА ---
-def reparse_movie(tmdb_id):
-    print(f"🔄 Запуск обработки метаданных для ID: {tmdb_id}")
-
-    # 1. Получаем Runtime из основной базы
-    runtime = 0
-    if os.path.exists(TMDB_DB_PATH):
-        with sqlite3.connect(TMDB_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT runtime, title FROM items_minimal WHERE id = ?", (tmdb_id,))
-            row = cursor.fetchone()
-            if row:
-                runtime = row[0] if row[0] else 0
-                print(f"🎬 Фильм: {row[1]} (Длительность: {runtime} мин.)")
-            else:
-                print(f"⚠️ Фильм с ID {tmdb_id} не найден в {TMDB_DB_PATH}")
-                # Продолжаем, просто битрейт будет 0
-    else:
-        print(f"❌ База {TMDB_DB_PATH} не найдена!")
-        return
-
-    # 2. Получаем список торрентов
-    torrents = []
-    if os.path.exists(TORRENTS_DB_PATH):
-        with sqlite3.connect(TORRENTS_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT magnet, torrent_title, size FROM torrents WHERE tmdb_id = ?", (tmdb_id,))
-            torrents = cursor.fetchall()
-    else:
-        print(f"❌ База {TORRENTS_DB_PATH} не найдена!")
-        return
-
-    if not torrents:
-        print("❌ Торренты для этого ID не найдены.")
-        return
-
-    print(f"🔍 Найдено раздач: {len(torrents)}")
-
-    # 3. Подготовка данных для DATA DB
-    to_insert = []
+def main():
+    print(f"🚀 Запуск (Режим полного пересканирования: {RESCAN_ALL})...")
     
-    for magnet, title, size_str in torrents:
-        # Извлекаем Info Hash из магнита
-        hm = re.search(r'btih:([a-zA-Z0-9]{40})', magnet)
-        if not hm:
-            continue
-        info_hash = hm.group(1).upper()
+    if not os.path.exists(TMDB_DB_PATH) or not os.path.exists(TORRENTS_DB_PATH):
+        print("❌ Ошибка: Базы данных не найдены.")
+        return
+
+    # 1. Загружаем Runtime
+    print("📦 Загрузка длительности фильмов (Runtime)...")
+    runtime_map = {}
+    with sqlite3.connect(TMDB_DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, runtime FROM items_minimal WHERE runtime IS NOT NULL")
+        for r in cursor:
+            runtime_map[r[0]] = r[1]
+    
+    # 2. Проверяем, что уже есть (только если RESCAN_ALL = False)
+    valid_hashes = set()
+    
+    with sqlite3.connect(DATA_DB_PATH) as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS torrent_details (
+            info_hash TEXT PRIMARY KEY, resolution TEXT, size INTEGER, files TEXT, 
+            hdr_type TEXT, file_type TEXT, codec TEXT, bitrate REAL, audio TEXT
+        )""")
         
-        # Анализ
+        if not RESCAN_ALL:
+            print("📦 Проверка существующих метаданных...")
+            cursor = conn.execute("SELECT info_hash, resolution FROM torrent_details")
+            for row in cursor:
+                h, res = row
+                if res and res != 'N/A':
+                    valid_hashes.add(h)
+            print(f"✅ Будет пропущено {len(valid_hashes)} записей.")
+        else:
+            print("⚠️ RESCAN_ALL включен. Существующие записи будут обновлены новыми тегами.")
+
+    # 3. Загружаем торренты
+    print("📦 Загрузка списка торрентов...")
+    torrents_to_process = []
+    
+    with sqlite3.connect(TORRENTS_DB_PATH) as conn:
+        cursor = conn.execute("SELECT tmdb_id, torrent_title, magnet, size FROM torrents")
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            magnet = row[2]
+            hm = re.search(r'btih:([a-zA-Z0-9]{40})', magnet)
+            if not hm: continue
+            
+            info_hash = hm.group(1).upper()
+            
+            # Если RESCAN_ALL = True, то valid_hashes пустой, и мы берем всё.
+            if info_hash not in valid_hashes:
+                torrents_to_process.append({
+                    'tmdb_id': row[0],
+                    'title': row[1],
+                    'size_str': row[3],
+                    'info_hash': info_hash
+                })
+
+    total_count = len(torrents_to_process)
+    if total_count == 0:
+        print("🎉 Нет торрентов для обработки.")
+        return
+
+    print(f"⚡ Обработка {total_count} торрентов...")
+
+    # 4. Обработка
+    batch_size = 1000
+    current_batch = []
+    
+    conn_data = sqlite3.connect(DATA_DB_PATH)
+    conn_data.execute("PRAGMA journal_mode = WAL;") 
+    
+    for item in tqdm(torrents_to_process, desc="Processing"):
+        tmdb_id = item['tmdb_id']
+        title = item['title']
+        size_str = item['size_str']
+        info_hash = item['info_hash']
+        
         meta = analyze_title(title or "")
         size_bytes = parse_size_to_bytes(size_str)
+        runtime = runtime_map.get(tmdb_id, 0)
         bitrate = calculate_bitrate(size_bytes, runtime)
-        
-        # Формирование строки аудио
         audio_str = " | ".join(meta['audio_tags'])
         
-        # Данные для вставки
         row_data = (
             info_hash,
             meta['resolution'],
             size_bytes,
-            json.dumps(['(title_parse)']), # Заглушка для файлов
+            json.dumps(['(title_parse)']),
             meta['hdr_type'],
-            'mkv', # Предполагаем mkv, так как парсим только заголовок
+            'mkv',
             meta['codec'],
             bitrate,
             audio_str
         )
-        to_insert.append(row_data)
-
-    # 4. Запись в DATA DB
-    if to_insert:
-        try:
-            conn_data = sqlite3.connect(DATA_DB_PATH)
-            # Включаем WAL для быстродействия, если нужно
-            conn_data.execute("PRAGMA journal_mode = WAL;") 
-            
-            # Создаем таблицу, если её нет
-            conn_data.execute("""CREATE TABLE IF NOT EXISTS torrent_details (
-                info_hash TEXT PRIMARY KEY, 
-                resolution TEXT, 
-                size INTEGER, 
-                files TEXT, 
-                hdr_type TEXT, 
-                file_type TEXT, 
-                codec TEXT, 
-                bitrate REAL, 
-                audio TEXT
-            )""")
-            
-            # Вставляем данные (REPLACE, чтобы обновить старые данные)
+        current_batch.append(row_data)
+        
+        if len(current_batch) >= batch_size:
             conn_data.executemany("""
                 INSERT OR REPLACE INTO torrent_details 
                 (info_hash, resolution, size, files, hdr_type, file_type, codec, bitrate, audio) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, to_insert)
-            
+            """, current_batch)
             conn_data.commit()
-            conn_data.close()
-            print(f"✅ Успешно обновлено записей: {len(to_insert)}")
-        except sqlite3.Error as e:
-            print(f"❌ Ошибка записи в БД: {e}")
-    else:
-        print("⚠️ Нечего записывать (возможно, битые магниты).")
+            current_batch = []
+
+    if current_batch:
+        conn_data.executemany("""
+            INSERT OR REPLACE INTO torrent_details 
+            (info_hash, resolution, size, files, hdr_type, file_type, codec, bitrate, audio) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, current_batch)
+        conn_data.commit()
+
+    conn_data.close()
+    print("\n🏁 Готово!")
 
 if __name__ == "__main__":
-    print("--- Reparse Metadata Tool ---")
-    if len(sys.argv) > 1:
-        try:
-            t_id = int(sys.argv[1])
-            reparse_movie(t_id)
-        except ValueError:
-            print("ID должен быть числом.")
-    else:
-        try:
-            user_input = input("Введите TMDB ID: ").strip()
-            if user_input:
-                reparse_movie(int(user_input))
-        except ValueError:
-            print("Ошибка: ID должен быть целым числом.")
-        except KeyboardInterrupt:
-            print("\nОтменено.")
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nПрервано.")

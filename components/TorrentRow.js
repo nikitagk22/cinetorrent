@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Magnet, Video, Monitor, Mic, FileText, Signal, Star, Zap, FileDown, Loader2 } from 'lucide-react'; // Добавил Zap для битрейта (или можно Signal)
+
+const scrollbarHideStyles = {
+  msOverflowStyle: 'none',  /* IE and Edge */
+  scrollbarWidth: 'none',   /* Firefox */
+};
 
 export default function TorrentRow({ torrent }) {
   const details = torrent.cached_details || {};
@@ -84,25 +89,61 @@ export default function TorrentRow({ torrent }) {
     return null;
   };
 
+// --- НОВАЯ ФУНКЦИЯ ПАРСИНГА ТЕГОВ ---
+  // Она сразу убирает дубли и объединяет rus/dub/дб в один "Дубляж"
   const getAudioBadges = (audioString) => {
     if (!audioString) return [];
-    return audioString.split('|').map(s => s.trim()).filter(Boolean);
+    
+    const rawTags = audioString.split('|').map(s => s.trim()).filter(Boolean);
+    const processedTags = [];
+    let hasDub = false; // Флаг: был ли уже добавлен дубляж
+
+    rawTags.forEach(tag => {
+        const lower = tag.toLowerCase();
+        
+        // Список тегов, которые считаем "просто дубляжом"
+        // Если попадается любой из них, мы превращаем его в 'Дубляж'
+        if (lower === 'dub' || lower === 'rus' || lower === 'дубляж' || lower === 'дб') {
+            if (!hasDub) {
+                processedTags.push('Дубляж');
+                hasDub = true;
+            }
+        } else {
+            // Любые другие студии (RHS, LostFilm и т.д.) добавляем как есть
+            // Но проверяем на полные дубликаты (на всякий случай)
+            if (!processedTags.includes(tag)) {
+                processedTags.push(tag);
+            }
+        }
+    });
+
+    return processedTags;
   };
 
-  // --- КОМПОНЕНТ БЕЙДЖА АУДИО ---
+  // --- ОБНОВЛЕННЫЙ КОМПОНЕНТ БЕЙДЖА ---
   const AudioBadge = ({ tag }) => {
     const lowerTag = tag.toLowerCase();
-    // Убираем показ субтитров
-    if (lowerTag.includes('sub')) {
-        return null; 
-    }
+    
+    if (lowerTag.includes('sub')) return null; 
 
-    let badgeStyle = "bg-rose-50 text-rose-700 border-rose-100";
+    let badgeStyle = "bg-gray-100 text-gray-700 border-gray-200";
     let Icon = Mic;
 
-    if (lowerTag.includes('red head') || lowerTag.includes('rhs') || lowerTag.includes('дубляж') || lowerTag.includes('мосфильм')) {
+    // Стилизация
+    // Т.к. мы уже заменили rus/dub на 'Дубляж', тут достаточно проверить 'дубляж'
+    // Но оставляем проверки на RHS, Мосфильм и т.д., так как они идут отдельно
+    if (lowerTag.includes('дубляж') || lowerTag.includes('red head') || lowerTag.includes('rhs') || lowerTag.includes('мосфильм') || lowerTag.includes('невафильм') || lowerTag.includes('пифагор')) {
         badgeStyle = "bg-rose-100 text-rose-800 border-rose-200 font-bold shadow-sm";
         Icon = Star;
+    }
+    else if (lowerTag.match(/(hdrezka|rezka|jaskier|newstudio|lostfilm|кубик в кубе|good people|pazl voice)/)) {
+        badgeStyle = "bg-teal-50 text-teal-700 border-teal-100";
+    }
+    else if (lowerTag.match(/(anilibria|anidub|animevost|studio band|студийная банда|shiza)/)) {
+        badgeStyle = "bg-purple-50 text-purple-700 border-purple-100";
+    }
+    else if (lowerTag.match(/(гаврилов|михалев|володарский|сербин|пучков|гоблин|goblin|дохалов|живов)/)) {
+        badgeStyle = "bg-amber-50 text-amber-800 border-amber-200";
     }
     else if (lowerTag.includes('5.1') || lowerTag.includes('7.1')) {
         badgeStyle = "bg-orange-50 text-orange-700 border-orange-100";
@@ -111,8 +152,8 @@ export default function TorrentRow({ torrent }) {
     else if (lowerTag.includes('original') || lowerTag.includes('eng')) {
         badgeStyle = "bg-blue-50 text-blue-700 border-blue-100";
     }
-    else if (lowerTag.match(/(rezka|jaskier|tvshows|lostfilm|newstudio|kubik)/)) {
-        badgeStyle = "bg-teal-50 text-teal-700 border-teal-100";
+    else if (lowerTag.match(/(mvo|dvo|avo)/)) {
+        badgeStyle = "bg-indigo-50 text-indigo-700 border-indigo-100";
     }
 
     return (
@@ -132,6 +173,37 @@ export default function TorrentRow({ torrent }) {
         {bitrate} Mbps
      </span>
   );
+
+  // --- ЛОГИКА DRAG-TO-SCROLL ---
+  const sliderRef = useRef(null);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollLeft = useRef(0);
+  const [isGrabbing, setIsGrabbing] = useState(false); // Только для смены курсора
+
+  const handleMouseDown = (e) => {
+    isDragging.current = true;
+    setIsGrabbing(true);
+    // Запоминаем, где нажали и текущий скролл
+    startX.current = e.pageX - sliderRef.current.offsetLeft;
+    scrollLeft.current = sliderRef.current.scrollLeft;
+  };
+
+  const handleMouseLeaveOrUp = () => {
+    isDragging.current = false;
+    setIsGrabbing(false);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging.current) return;
+    e.preventDefault(); // Останавливаем выделение текста
+    
+    const x = e.pageX - sliderRef.current.offsetLeft;
+    // (x - startX) — это то, насколько мы сдвинули мышь.
+    // Умножаем на 1 (или 1.5/2), чтобы скролл был быстрее движения руки, если нужно
+    const walk = (x - startX.current) * 1; 
+    sliderRef.current.scrollLeft = scrollLeft.current - walk;
+  };
 
   return (
     <tr className="group hover:bg-gray-50/80 transition-colors border-b border-gray-100 last:border-0 text-left">
@@ -180,32 +252,59 @@ export default function TorrentRow({ torrent }) {
                 )}
              </div>
 
-             {/* Строка 2: Озвучки */}
+             {/* Строка 2: Озвучки (Скролл) */}
              {audioTags.length > 0 && (
-                 <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                    {audioTags.slice(0, 4).map((tag, idx) => (
-                        <AudioBadge key={idx} tag={tag} />
+                 <div 
+                    className="flex flex-nowrap overflow-x-auto items-center gap-1.5 mt-0.5 pb-1 -mx-4 px-4 md:mx-0 md:px-0"
+                    style={{ ...scrollbarHideStyles, WebkitOverflowScrolling: 'touch' }} // Плавный скролл на iOS
+                 >
+                    {/* Скрываем скроллбар для Chrome/Safari через inline стиль элемента */}
+                    <style jsx>{`
+                        div::-webkit-scrollbar { display: none; }
+                    `}</style>
+
+                    {audioTags.map((tag, idx) => (
+                        <div key={idx} className="flex-shrink-0"> {/* flex-shrink-0 чтобы не сжимались */}
+                            <AudioBadge tag={tag} />
+                        </div>
                     ))}
-                    {audioTags.length > 4 && (
-                        <span className="text-[10px] text-gray-400">+{audioTags.length - 4}</span>
-                    )}
                  </div>
              )}
           </div>
           
-          {/* --- ДЕСКТОП ВЕРСИЯ (Список тегов под названием) --- */}
-          <div className="hidden md:flex flex-wrap items-center gap-2 mt-1">
+          {/* --- ДЕСКТОП ВЕРСИЯ (Drag-to-Scroll) --- */}
+          <div 
+            ref={sliderRef}
+            onMouseDown={handleMouseDown}
+            onMouseLeave={handleMouseLeaveOrUp}
+            onMouseUp={handleMouseLeaveOrUp}
+            onMouseMove={handleMouseMove}
+            
+            className={`hidden md:flex flex-nowrap overflow-x-auto items-center gap-2 mt-1 pb-1 w-full max-w-[30vw] lg:max-w-[25vw] select-none ${
+                isGrabbing ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+            style={{
+                msOverflowStyle: 'none', 
+                scrollbarWidth: 'none' 
+            }}
+          >
+             {/* Скрытие скроллбара для Chrome */}
+             <style jsx>{`
+                div::-webkit-scrollbar { display: none; }
+             `}</style>
+
              {details.codec && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 pointer-events-none">
                    <Video className="w-3 h-3" /> {details.codec}
                 </span>
              )}
-             {audioTags.slice(0, 6).map((tag, idx) => (
-                <AudioBadge key={idx} tag={tag} />
+             
+             {audioTags.map((tag, idx) => (
+                <div key={idx} className="flex-shrink-0 pointer-events-none">
+                    {/* pointer-events-none внутри, чтобы события мыши ловил только родитель (контейнер) */}
+                    <AudioBadge tag={tag} />
+                </div>
              ))}
-             {audioTags.length > 6 && (
-                 <span className="text-[10px] text-gray-400 font-medium">+{audioTags.length - 6}</span>
-             )}
           </div>
 
         </div>
